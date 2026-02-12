@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const REPOS_JSON_URL = 'https://api.github.com/repos/KhaleonProductions/pr-teams-notifier/contents/repos.json';
+
 // --- 1. Read PR data ---
 
 const prData = {
@@ -63,13 +65,46 @@ if (!webhookUrl || webhookUrl === 'YOUR_TEAMS_WEBHOOK_URL_HERE') {
   process.exit(1);
 }
 
-// Check repo allowlist
-if (config.notifyAllRepos === false) {
-  const repos = (config.repos || []).map(r => r.toLowerCase());
-  if (!repos.includes(prData.repo.toLowerCase())) {
-    console.log(`[pr-notify] Skipping: ${prData.repo} is not in the repo allowlist.`);
+// --- Fetch watched repos from GitHub ---
+
+async function getWatchedRepos() {
+  try {
+    console.log('[pr-notify] Fetching watched repos from GitHub...');
+    const response = await fetch(REPOS_JSON_URL, {
+      headers: {
+        'Accept': 'application/vnd.github.v3.raw+json',
+        'User-Agent': 'pr-teams-notifier',
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const data = await response.json();
+    const repos = (data.repos || []).map(r => r.toLowerCase());
+    console.log(`[pr-notify] Loaded ${repos.length} watched repo(s) from GitHub.`);
+    return repos;
+  } catch (err) {
+    console.error(`[pr-notify] Could not fetch repos.json from GitHub: ${err.message}`);
+    // Fallback: try local config.json repos array
+    const localRepos = (config.repos || []).map(r => r.toLowerCase());
+    if (localRepos.length > 0) {
+      console.log(`[pr-notify] Falling back to ${localRepos.length} repo(s) from local config.json.`);
+      return localRepos;
+    }
+    // If no fallback repos either, allow all
+    console.log('[pr-notify] No fallback repos found. Allowing all repos.');
+    return null;
+  }
+}
+
+// Check repo watchlist
+const watchedRepos = await getWatchedRepos();
+if (watchedRepos !== null) {
+  if (!watchedRepos.includes(prData.repo.toLowerCase())) {
+    console.log(`[pr-notify] Skipping: ${prData.repo} is not in the watched repos list.`);
     process.exit(0);
   }
+  console.log(`[pr-notify] ${prData.repo} is in the watched list. Proceeding.`);
 }
 
 // --- 3. Generate plain English summary ---

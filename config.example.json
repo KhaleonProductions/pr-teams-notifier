@@ -1,9 +1,5 @@
 {
   "teamsWebhookUrl": "YOUR_TEAMS_WEBHOOK_URL_HERE",
-  "notifyAllRepos": true,
-  "repos": [
-    "KhaleonProductions/resume-builder-pro",
-    "KhaleonProductions/branch-practice"
-  ],
-  "senderName": "PR Notifier"
+  "senderName": "PR Notifier",
+  "repos": []
 }

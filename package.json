@@ -1,0 +1,13 @@
+{
+  "name": "pr-teams-notifier",
+  "version": "1.0.0",
+  "description": "Automatically sends PR notifications to Microsoft Teams",
+  "main": "notify.js",
+  "type": "module",
+  "scripts": {
+    "test": "node notify.js"
+  },
+  "keywords": ["github", "teams", "notifications", "pull-request"],
+  "author": "KhaleonProductions",
+  "license": "ISC"
+}

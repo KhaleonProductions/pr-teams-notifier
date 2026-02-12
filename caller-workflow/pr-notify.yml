@@ -1,0 +1,16 @@
+# Copy this file into your repo's .github/workflows/ directory
+# Then add TEAMS_WEBHOOK_URL as a repository secret on GitHub
+#
+# See: https://github.com/KhaleonProductions/pr-teams-notifier
+
+name: PR Teams Notification
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  notify:
+    uses: KhaleonProductions/pr-teams-notifier/.github/workflows/reusable-pr-notify.yml@master
+    secrets:
+      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}

@@ -1,0 +1,60 @@
+name: PR Teams Notification (Reusable)
+
+on:
+  workflow_call:
+    secrets:
+      TEAMS_WEBHOOK_URL:
+        required: true
+        description: 'Microsoft Teams Incoming Webhook URL'
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'opened'
+    steps:
+      - name: Checkout notifier repo
+        uses: actions/checkout@v4
+        with:
+          repository: KhaleonProductions/pr-teams-notifier
+          path: notifier
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Get PR file list
+        id: files
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            const fileNames = files.map(f => f.filename).join(',');
+            core.setOutput('file_list', fileNames);
+            core.setOutput('file_count', String(files.length));
+            const additions = files.reduce((sum, f) => sum + f.additions, 0);
+            const deletions = files.reduce((sum, f) => sum + f.deletions, 0);
+            core.setOutput('additions', String(additions));
+            core.setOutput('deletions', String(deletions));
+
+      - name: Send Teams notification
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+          PR_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_CREATED_AT: ${{ github.event.pull_request.created_at }}
+          PR_FILES: ${{ steps.files.outputs.file_list }}
+          PR_FILES_COUNT: ${{ steps.files.outputs.file_count }}
+          PR_ADDITIONS: ${{ steps.files.outputs.additions }}
+          PR_DELETIONS: ${{ steps.files.outputs.deletions }}
+        run: node notifier/notify.js

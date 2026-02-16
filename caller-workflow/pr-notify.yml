@@ -9,6 +9,10 @@ on:
   pull_request:
     types: [opened]
 
+permissions:
+  pull-requests: read
+  contents: read
+
 jobs:
   notify:
     uses: KhaleonProductions/pr-teams-notifier/.github/workflows/reusable-pr-notify.yml@master

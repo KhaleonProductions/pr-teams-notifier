@@ -1,6 +1,6 @@
 # PR Teams Notifier
 
-Automatically sends a formatted notification to Microsoft Teams every time you create a Pull Request. Team members can control which repos are watched directly from the Teams channel.
+Automatically sends a formatted notification to Microsoft Teams every time you create a Pull Request, **and** auto-generates a Feature Docs entry (AI-written summary + Excalidraw diagram) into a Microsoft Lists tab pinned to the channel — so every PR has its own browseable section without searching.
 
 ## What You Get
 
@@ -10,10 +10,13 @@ When you create a PR on a watched repo, a message is posted to your Teams channe
 - Branch name (e.g. `feature/dark-mode` → `main`)
 - Date and time
 - Number of files changed and lines added/removed
-- Plain English summary of what changed
+- **AI-written plain-English summary** (Haiku 4.5) — falls back to a deterministic summary if the AI is unavailable
+- **Inline Excalidraw diagram** of the change (Mermaid → Excalidraw via Kroki)
 - Full description
 - List of changed files
 - A "View Pull Request" button
+
+If you've configured the auto-doc Lists tab (Step 6 below), every PR also adds a row to the **Feature Docs** Microsoft Lists tab in the channel — one section per PR, fully browseable.
 
 ## Teams Commands
 
@@ -170,6 +173,77 @@ This enables the `watch`, `unwatch`, and `list repos` commands in your Teams cha
    - **Post message**: `Currently watching @{length(outputs('Decode_Content')?['repos'])} repo(s): @{outputs('Format_List')}`
 5. **Save** the flow
 
+### Step 6 (Optional): Auto-doc to a Feature Docs Lists tab
+
+This is the SG1-internal workflow: every PR adds a row to a Microsoft Lists tab pinned to the channel. Each row is one feature, with its own AI-written summary and Excalidraw diagram. No searching — just browse.
+
+**You only need to do this once.** All auto-doc fields are optional; if any are missing, `notify.js` falls back to the plain notification.
+
+#### 6.1 — Reuse the existing SG1 Azure app
+
+We piggyback on the existing **`M365 Intelligence Pro Content`** app registration in SG1's Entra tenant. It already has `Sites.ReadWrite.All` and `Files.ReadWrite.All`, admin-consented. No new app, no new permissions.
+
+1. Go to https://portal.azure.com → **Microsoft Entra ID** → **App registrations**.
+2. Search for `M365 Intelligence Pro Content`. Open it.
+3. Copy the **Application (client) ID** — this is `azure.contentClientId`.
+4. Click **Certificates & secrets** → **Client secrets** → **+ New client secret**.
+   - Description: `pr-teams-notifier`
+   - Expires: 24 months
+5. **Copy the secret VALUE immediately** (you won't see it again) — this is `azure.contentClientSecret`.
+6. SG1 Azure tenant ID is `e5c2a9fc-8901-41cc-8e5a-d504e42e4ca0` — this is `azure.tenantId`.
+
+#### 6.2 — Create the Feature Docs Microsoft List
+
+1. Open Microsoft Teams → the team you want (e.g. **The Everything**) → channel **feature docs**.
+2. Click **+** at the top of the channel → **Lists** → **Create a list** → **From scratch**.
+3. Name it `Feature Docs`. Click Create.
+4. Add these columns (use the EXACT names — no spaces — to match the field IDs in `notify.js`):
+
+   | Column name | Type | Notes |
+   |---|---|---|
+   | (Title) | (built-in) | Holds the PR title |
+   | `Repo` | Single line of text | |
+   | `Branch` | Single line of text | |
+   | `PRNumber` | Number | |
+   | `PRURL` | Hyperlink | |
+   | `Date` | Date and time | |
+   | `Diagram` | Hyperlink (display as picture) | Set "Format URL as: Picture" in column settings so it thumbnails |
+   | `Summary` | Multiple lines of text | |
+   | `FilesChanged` | Number | |
+   | `Lines` | Single line of text | |
+
+   The List **automatically pins as a tab** in the channel. That's your custom Feature Docs tab — done.
+
+#### 6.3 — Look up the site/list IDs
+
+```bash
+cd C:\code\pr-teams-notifier
+bash bootstrap.sh
+```
+
+You'll be prompted for the Team display name. The script prints a `config.json` snippet with `siteId` and `listId` filled in.
+
+#### 6.4 — Drop into config.json + GitHub Action secrets
+
+Paste the snippet into your local `config.json`. Then, **for each repo where you want auto-doc** (e.g. `staino83/business_brain`), add these secrets in GitHub → Settings → Secrets and variables → Actions:
+
+- `ANTHROPIC_API_KEY`
+- `AZURE_TENANT_ID`
+- `AZURE_CONTENT_CLIENT_ID`
+- `AZURE_CONTENT_CLIENT_SECRET`
+- `LISTS_SITE_ID`
+- `LISTS_LIST_ID`
+
+(Plus the existing `TEAMS_WEBHOOK_URL`.)
+
+#### 6.5 — Smoke test
+
+Open a small PR on a watched repo. Within 60 seconds you should see:
+- A card in the Teams channel with the AI summary + diagram inline.
+- A new row in the **Feature Docs** Lists tab with the same data + clickable thumbnail.
+
+If the diagram is missing, the AI step or Kroki render failed — check the Action logs. The notification still went out.
+
 ## Usage
 
 ### From the terminal (replaces `gh pr create`)
@@ -209,19 +283,36 @@ This is the primary repo watch list, managed via Teams commands. You can also ed
 
 ```
 pr-teams-notifier/
-├── notify.js             # Core notification script
+├── notify.js             # Core notification script (AI gen + Lists POST)
 ├── repos.json            # Watched repos list (managed via Teams)
 ├── gh-pr-notify.sh       # Local trigger (gh alias wrapper)
-├── config.json           # Webhook URL config (gitignored)
+├── config.json           # Webhook URL + auto-doc config (gitignored)
 ├── config.example.json   # Template configuration
 ├── setup.sh              # One-time setup script
 ├── setup.bat             # Windows launcher for setup.sh
 ├── add-to-repo.sh        # Add GitHub Action to a repo
+├── bootstrap.sh          # Looks up SharePoint site/list IDs for auto-doc
+├── package.json          # Adds @excalidraw/mermaid-to-excalidraw dep
 ├── .github/workflows/
-│   └── reusable-pr-notify.yml   # Reusable GitHub Action
+│   └── reusable-pr-notify.yml   # Reusable GitHub Action (forwards auto-doc secrets)
 └── caller-workflow/
     └── pr-notify.yml     # Template to copy into other repos
 ```
+
+## Auto-doc failure modes
+
+The auto-doc pipeline is best-effort. Each step degrades independently:
+
+| Failure | Behaviour |
+|---|---|
+| Anthropic API down or `ANTHROPIC_API_KEY` unset | Falls back to deterministic summary; no diagram; no list row. |
+| AI returned an invalid mermaid spec | Falls back to deterministic summary; no diagram; no list row. |
+| `@excalidraw/mermaid-to-excalidraw` not installed | Card includes summary; no diagram; no list row. |
+| Kroki / mermaid.ink unreachable from Teams' image renderer | Card includes URL; image just won't render in the card. |
+| Microsoft Graph token / List POST fails | Card still posts with diagram; no list row added. |
+| Teams webhook itself fails | Hard exit 1 (matches existing behaviour). |
+
+The basic Teams notification ALWAYS goes out as long as the webhook URL works.
 
 ## Troubleshooting
 

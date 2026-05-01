@@ -6,6 +6,24 @@ on:
       TEAMS_WEBHOOK_URL:
         required: true
         description: 'Microsoft Teams Incoming Webhook URL'
+      ANTHROPIC_API_KEY:
+        required: false
+        description: 'Anthropic API key for AI summary + Mermaid generation. Leave unset to disable auto-doc.'
+      AZURE_TENANT_ID:
+        required: false
+        description: 'SG1 Azure tenant ID (e.g. e5c2a9fc-8901-41cc-8e5a-d504e42e4ca0).'
+      AZURE_CONTENT_CLIENT_ID:
+        required: false
+        description: 'M365 Intelligence Pro Content app — client ID.'
+      AZURE_CONTENT_CLIENT_SECRET:
+        required: false
+        description: 'M365 Intelligence Pro Content app — client secret (generate a new one for pr-teams-notifier).'
+      LISTS_SITE_ID:
+        required: false
+        description: 'SharePoint site ID where the Feature Docs list lives. See bootstrap.sh.'
+      LISTS_LIST_ID:
+        required: false
+        description: 'SharePoint list ID for the Feature Docs list. See bootstrap.sh.'
 
 jobs:
   notify:
@@ -22,6 +40,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+
+      - name: Install notifier deps
+        working-directory: notifier
+        run: npm install --omit=dev
 
       - name: Get PR file list
         id: files
@@ -44,17 +66,23 @@ jobs:
 
       - name: Send Teams notification
         env:
-          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
-          PR_BASE: ${{ github.event.pull_request.base.ref }}
-          PR_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_CREATED_AT: ${{ github.event.pull_request.created_at }}
-          PR_FILES: ${{ steps.files.outputs.file_list }}
-          PR_FILES_COUNT: ${{ steps.files.outputs.file_count }}
-          PR_ADDITIONS: ${{ steps.files.outputs.additions }}
-          PR_DELETIONS: ${{ steps.files.outputs.deletions }}
+          TEAMS_WEBHOOK_URL:           ${{ secrets.TEAMS_WEBHOOK_URL }}
+          ANTHROPIC_API_KEY:           ${{ secrets.ANTHROPIC_API_KEY }}
+          AZURE_TENANT_ID:             ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CONTENT_CLIENT_ID:     ${{ secrets.AZURE_CONTENT_CLIENT_ID }}
+          AZURE_CONTENT_CLIENT_SECRET: ${{ secrets.AZURE_CONTENT_CLIENT_SECRET }}
+          LISTS_SITE_ID:               ${{ secrets.LISTS_SITE_ID }}
+          LISTS_LIST_ID:               ${{ secrets.LISTS_LIST_ID }}
+          PR_URL:                      ${{ github.event.pull_request.html_url }}
+          PR_TITLE:                    ${{ github.event.pull_request.title }}
+          PR_BODY:                     ${{ github.event.pull_request.body }}
+          PR_BRANCH:                   ${{ github.event.pull_request.head.ref }}
+          PR_BASE:                     ${{ github.event.pull_request.base.ref }}
+          PR_REPO:                     ${{ github.repository }}
+          PR_NUMBER:                   ${{ github.event.pull_request.number }}
+          PR_CREATED_AT:               ${{ github.event.pull_request.created_at }}
+          PR_FILES:                    ${{ steps.files.outputs.file_list }}
+          PR_FILES_COUNT:              ${{ steps.files.outputs.file_count }}
+          PR_ADDITIONS:                ${{ steps.files.outputs.additions }}
+          PR_DELETIONS:                ${{ steps.files.outputs.deletions }}
         run: node notifier/notify.js

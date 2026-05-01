@@ -1,6 +1,14 @@
 # Copy this file into your repo's .github/workflows/ directory
-# Then add TEAMS_WEBHOOK_URL as a repository secret on GitHub
+# Then add these repository secrets on GitHub:
+#   - TEAMS_WEBHOOK_URL          (required)
+#   - ANTHROPIC_API_KEY          (optional — enables AI summary + diagram)
+#   - AZURE_TENANT_ID            (optional — needed for Lists tab auto-doc)
+#   - AZURE_CONTENT_CLIENT_ID    (optional — same)
+#   - AZURE_CONTENT_CLIENT_SECRET (optional — same)
+#   - LISTS_SITE_ID              (optional — same)
+#   - LISTS_LIST_ID              (optional — same)
 #
+# All auto-doc secrets are optional — leave any unset to fall back to plain notification.
 # See: https://github.com/KhaleonProductions/pr-teams-notifier
 
 name: PR Teams Notification
@@ -17,4 +25,10 @@ jobs:
   notify:
     uses: KhaleonProductions/pr-teams-notifier/.github/workflows/reusable-pr-notify.yml@master
     secrets:
-      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+      TEAMS_WEBHOOK_URL:           ${{ secrets.TEAMS_WEBHOOK_URL }}
+      ANTHROPIC_API_KEY:           ${{ secrets.ANTHROPIC_API_KEY }}
+      AZURE_TENANT_ID:             ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CONTENT_CLIENT_ID:     ${{ secrets.AZURE_CONTENT_CLIENT_ID }}
+      AZURE_CONTENT_CLIENT_SECRET: ${{ secrets.AZURE_CONTENT_CLIENT_SECRET }}
+      LISTS_SITE_ID:               ${{ secrets.LISTS_SITE_ID }}
+      LISTS_LIST_ID:               ${{ secrets.LISTS_LIST_ID }}

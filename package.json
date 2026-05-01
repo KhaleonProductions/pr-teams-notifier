@@ -1,13 +1,16 @@
 {
   "name": "pr-teams-notifier",
-  "version": "1.0.0",
-  "description": "Automatically sends PR notifications to Microsoft Teams",
+  "version": "1.1.0",
+  "description": "Automatically sends PR notifications to Microsoft Teams, with AI-generated summary + auto-doc Feature Docs Lists tab.",
   "main": "notify.js",
   "type": "module",
   "scripts": {
     "test": "node notify.js"
   },
-  "keywords": ["github", "teams", "notifications", "pull-request"],
+  "dependencies": {
+    "@excalidraw/mermaid-to-excalidraw": "^1.1.2"
+  },
+  "keywords": ["github", "teams", "notifications", "pull-request", "auto-doc", "excalidraw"],
   "author": "KhaleonProductions",
   "license": "ISC"
 }

@@ -4,14 +4,56 @@ on:
   workflow_call:
     secrets:
       TEAMS_WEBHOOK_URL:
-        required: true
-        description: 'Microsoft Teams Incoming Webhook URL'
+        required: false
+        description: 'Microsoft Teams Incoming Webhook URL (legacy fallback). Optional if Bot Framework is configured.'
+      CLAUDE_OAUTH_CREDS:
+        required: false
+        description: 'Claude Code SDK OAuth credentials JSON (writes to ~/.claude/.credentials.json). If absent, AI gen is skipped.'
+      AZURE_TENANT_ID:
+        required: false
+        description: 'SG1 Azure tenant ID.'
+      AZURE_CONTENT_CLIENT_ID:
+        required: false
+        description: 'M365 Intelligence Pro Content app — client ID.'
+      AZURE_CONTENT_CLIENT_SECRET:
+        required: false
+        description: 'M365 Intelligence Pro Content app — client secret.'
+      LISTS_SITE_ID:
+        required: false
+        description: 'SharePoint site ID.'
+      LISTS_LIST_ID:
+        required: false
+        description: 'SharePoint list ID for Feature Docs.'
+      TEAMS_APP_ID:
+        required: false
+        description: 'Bot Framework app id (Entra). When set, notify.js posts directly to a channel via Bot Framework instead of the webhook.'
+      TEAMS_APP_PASSWORD:
+        required: false
+        description: 'Bot Framework app secret.'
+      TARGET_TEAM_ID:
+        required: false
+        description: 'Target team groupId for Bot Framework post.'
+      TARGET_CHANNEL_ID:
+        required: false
+        description: 'Target channel id for Bot Framework post.'
+      BOT_HOME_AZURE_TENANT_ID:
+        required: false
+        description: 'Bot home tenant id (where the bot is registered, usually = AZURE_TENANT_ID).'
+      LISTS_DISPFORM_BASE_URL:
+        required: false
+        description: 'SharePoint DispForm base URL for deep linking from Teams cards (e.g. https://contoso.sharepoint.com/sites/X/Lists/Y/DispForm.aspx).'
 
 jobs:
   notify:
     runs-on: ubuntu-latest
     if: github.event.action == 'opened'
     steps:
+      - name: Checkout caller repo (for feature surface reading)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          path: caller
+
       - name: Checkout notifier repo
         uses: actions/checkout@v4
         with:
@@ -23,38 +65,45 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Get PR file list
-        id: files
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data: files } = await github.rest.pulls.listFiles({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number,
-              per_page: 100,
-            });
-            const fileNames = files.map(f => f.filename).join(',');
-            core.setOutput('file_list', fileNames);
-            core.setOutput('file_count', String(files.length));
-            const additions = files.reduce((sum, f) => sum + f.additions, 0);
-            const deletions = files.reduce((sum, f) => sum + f.deletions, 0);
-            core.setOutput('additions', String(additions));
-            core.setOutput('deletions', String(deletions));
+      - name: Install notifier deps
+        working-directory: notifier
+        run: npm install --omit=dev
+
+      - name: Provision Claude SDK OAuth (optional)
+        if: ${{ secrets.CLAUDE_OAUTH_CREDS != '' }}
+        env:
+          CLAUDE_OAUTH_CREDS: ${{ secrets.CLAUDE_OAUTH_CREDS }}
+        run: |
+          mkdir -p "$HOME/.claude"
+          printf '%s' "$CLAUDE_OAUTH_CREDS" > "$HOME/.claude/.credentials.json"
+          chmod 600 "$HOME/.claude/.credentials.json"
 
       - name: Send Teams notification
         env:
-          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
-          PR_BASE: ${{ github.event.pull_request.base.ref }}
-          PR_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_CREATED_AT: ${{ github.event.pull_request.created_at }}
-          PR_FILES: ${{ steps.files.outputs.file_list }}
-          PR_FILES_COUNT: ${{ steps.files.outputs.file_count }}
-          PR_ADDITIONS: ${{ steps.files.outputs.additions }}
-          PR_DELETIONS: ${{ steps.files.outputs.deletions }}
+          TEAMS_WEBHOOK_URL:           ${{ secrets.TEAMS_WEBHOOK_URL }}
+          AZURE_TENANT_ID:             ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CONTENT_CLIENT_ID:     ${{ secrets.AZURE_CONTENT_CLIENT_ID }}
+          AZURE_CONTENT_CLIENT_SECRET: ${{ secrets.AZURE_CONTENT_CLIENT_SECRET }}
+          LISTS_SITE_ID:               ${{ secrets.LISTS_SITE_ID }}
+          LISTS_LIST_ID:               ${{ secrets.LISTS_LIST_ID }}
+          TEAMS_APP_ID:                ${{ secrets.TEAMS_APP_ID }}
+          TEAMS_APP_PASSWORD:          ${{ secrets.TEAMS_APP_PASSWORD }}
+          TARGET_TEAM_ID:              ${{ secrets.TARGET_TEAM_ID }}
+          TARGET_CHANNEL_ID:           ${{ secrets.TARGET_CHANNEL_ID }}
+          BOT_HOME_AZURE_TENANT_ID:    ${{ secrets.BOT_HOME_AZURE_TENANT_ID }}
+          LISTS_DISPFORM_BASE_URL:     ${{ secrets.LISTS_DISPFORM_BASE_URL }}
+          REPO_DIR:                    ${{ github.workspace }}/caller
+          PR_AUTHOR:                   ${{ github.event.pull_request.user.login }}
+          PR_HEAD_SHA:                 ${{ github.event.pull_request.head.sha }}
+          GITHUB_TOKEN:                ${{ github.token }}
+          FEATURES_YAML:               ${{ github.workspace }}/notifier/features.yaml
+          SURFACE_REF:                 HEAD
+          PR_URL:                      ${{ github.event.pull_request.html_url }}
+          PR_TITLE:                    ${{ github.event.pull_request.title }}
+          PR_BODY:                     ${{ github.event.pull_request.body }}
+          PR_BRANCH:                   ${{ github.event.pull_request.head.ref }}
+          PR_BASE:                     ${{ github.event.pull_request.base.ref }}
+          PR_REPO:                     ${{ github.repository }}
+          PR_NUMBER:                   ${{ github.event.pull_request.number }}
+          PR_CREATED_AT:               ${{ github.event.pull_request.created_at }}
         run: node notifier/notify.js

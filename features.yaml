@@ -1,0 +1,45 @@
+# Feature inventory for R27 auto-doc.
+# Each entry produces one row in the SharePoint Feature Docs list.
+# surfaceGlobs match against PR file lists (minimatch syntax).
+
+features:
+  - slug: xero
+    displayName: Xero accounting integration
+    description: OAuth onboarding, REST client, MCP tools, Trak↔Xero gate.
+    surfaceGlobs:
+      - teams_bot/src/cards/xeroOnboardingCard.ts
+      - teams_bot/src/routes/xeroAuth.ts
+      - teams_bot/src/services/bookkeeper/xero*.ts
+      - teams_bot/src/services/trakIntegration/xeroGate.ts
+      - teams_bot/src/services/xeroOnboardingDetection.ts
+      - teams_bot/supabase/migrations/080_xero_reference_cache.sql
+
+  - slug: gate-engine
+    displayName: HITL gate engine
+    description: Universal human-in-the-loop gate framework.
+    surfaceGlobs:
+      - teams_bot/src/services/gateEngine/**
+
+  - slug: bookkeeper
+    displayName: Bookkeeper agent
+    description: Browser-based bookkeeping automation against Xero UI.
+    surfaceGlobs:
+      - teams_bot/src/services/bookkeeper/**
+      - "!teams_bot/src/services/bookkeeper/xero*.ts"
+
+  - slug: trak-integration
+    displayName: Trak integration
+    description: Trak API client + sync workers + SMS monitor.
+    surfaceGlobs:
+      - teams_bot/src/services/trakIntegration/**
+      - "!teams_bot/src/services/trakIntegration/xeroGate.ts"
+
+  - slug: feature-registry
+    displayName: Feature registry
+    description: Per-tenant feature flags + manage_features MCP tool.
+    surfaceGlobs:
+      - teams_bot/src/services/featureRegistry.ts
+      - teams_bot/src/db/featureRegistry.ts
+
+  # NOTE: starter set. Add remaining features (proactiveIntelligence,
+  # mcpToolServer, errorBus, etc.) before backfill runs.

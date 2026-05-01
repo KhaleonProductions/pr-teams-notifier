@@ -1,13 +1,32 @@
 {
   "name": "pr-teams-notifier",
-  "version": "1.0.0",
-  "description": "Automatically sends PR notifications to Microsoft Teams",
+  "version": "1.1.0",
+  "description": "Automatically sends PR notifications to Microsoft Teams, with AI-generated summary + auto-doc Feature Docs Lists tab.",
   "main": "notify.js",
   "type": "module",
   "scripts": {
-    "test": "node notify.js"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "notify": "node notify.js"
   },
-  "keywords": ["github", "teams", "notifications", "pull-request"],
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.126",
+    "js-yaml": "^4.1.1",
+    "minimatch": "^10.2.5",
+    "p-limit": "^7.3.0"
+  },
+  "keywords": [
+    "github",
+    "teams",
+    "notifications",
+    "pull-request",
+    "auto-doc",
+    "claude-code-sdk"
+  ],
   "author": "KhaleonProductions",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "@jest/globals": "^30.3.0",
+    "jest": "^30.3.0"
+  }
 }

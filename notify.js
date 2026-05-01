@@ -253,48 +253,35 @@ Files changed (${prData.filesCount}, +${prData.additions}/-${prData.deletions}):
   return { summary, mermaidSpec, isNoOp: Boolean(isNoOp) };
 }
 
-// --- 3b. Mermaid → Excalidraw scene → Kroki PNG URL ---
+// --- 3b. Mermaid spec → mermaid.ink PNG URL ---
+//
+// Originally we converted Mermaid → Excalidraw scene via @excalidraw/mermaid-to-excalidraw
+// for the hand-drawn aesthetic, then rendered via Kroki. That package is browser-targeted
+// (does SVG layout via getBBox) and doesn't run cleanly in Node — even with a JSDOM polyfill.
+// Adding Puppeteer just for the rendering step is too much weight for a notification helper.
+// We ship Mermaid directly via mermaid.ink, which is a free public renderer — same trigger,
+// different visual style.
 
 async function buildDiagramUrl(mermaidSpec) {
-  // Lazy-import so the script still runs without the package installed (degrades to no diagram).
-  let parseMermaidToExcalidraw;
-  try {
-    ({ parseMermaidToExcalidraw } = await import('@excalidraw/mermaid-to-excalidraw'));
-  } catch (e) {
-    throw new Error(`@excalidraw/mermaid-to-excalidraw not installed: ${e.message}`);
-  }
-
-  const { elements, files } = await parseMermaidToExcalidraw(mermaidSpec);
-  const scene = {
-    type:       'excalidraw',
-    version:    2,
-    source:     'pr-teams-notifier',
-    elements,
-    appState:   { viewBackgroundColor: '#ffffff', gridSize: null },
-    files:      files || {},
-  };
-
-  // Kroki accepts deflate-raw + base64url-encoded payloads in the URL.
-  const sceneJson = JSON.stringify(scene);
-  const compressed = deflateRawSync(Buffer.from(sceneJson, 'utf8'), { level: 9 });
+  // mermaid.ink takes deflate-raw + base64url-encoded mermaid source. Pako format.
+  const compressed = deflateRawSync(Buffer.from(mermaidSpec, 'utf8'), { level: 9 });
   const encoded = compressed.toString('base64')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '');
 
-  // Sanity check: kroki has historically been tolerant of long URLs, but Teams Adaptive Card
-  // image renderers are stricter. Cap at ~6KB to be safe; fall back to mermaid.ink if oversize.
-  if (encoded.length > 6000) {
-    const mermaidEncoded = Buffer.from(mermaidSpec, 'utf8').toString('base64url');
-    return {
-      url: `https://mermaid.ink/img/${mermaidEncoded}?type=png`,
-      renderer: 'mermaid.ink',
-    };
-  }
+  // mermaid.ink supports both /img/<plain-base64> and /img/pako/<deflate-base64url>.
+  // We use plain base64 of the spec — simpler, fewer URL gotchas, max source ~7KB
+  // before Teams's image renderer truncates. With our 12-node cap on AI-generated
+  // mermaid, payloads are typically under 1KB.
+  const plainEncoded = Buffer.from(mermaidSpec, 'utf8').toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 
   return {
-    url: `https://kroki.io/excalidraw/png/${encoded}`,
-    renderer: 'kroki-excalidraw',
+    url: `https://mermaid.ink/img/${plainEncoded}?type=png&theme=default&bgColor=ffffff`,
+    renderer: 'mermaid.ink',
   };
 }
 

@@ -1,6 +1,6 @@
 # PR Teams Notifier
 
-Automatically sends a formatted notification to Microsoft Teams every time you create a Pull Request, **and** auto-generates a Feature Docs entry (AI-written summary + Excalidraw diagram) into a Microsoft Lists tab pinned to the channel — so every PR has its own browseable section without searching.
+Automatically sends a formatted notification to Microsoft Teams every time you create a Pull Request, **and** auto-generates a Feature Docs entry (AI-written summary + Mermaid diagram) into a Microsoft Lists tab pinned to the channel — so every PR has its own browseable section without searching.
 
 ## What You Get
 
@@ -11,7 +11,7 @@ When you create a PR on a watched repo, a message is posted to your Teams channe
 - Date and time
 - Number of files changed and lines added/removed
 - **AI-written plain-English summary** (Claude Code SDK, Haiku 4.5 — uses ambient OAuth, no API key) — falls back to a deterministic summary if the SDK isn't authenticated
-- **Inline Excalidraw diagram** of the change (Mermaid → Excalidraw via Kroki)
+- **Inline Mermaid diagram** of the change (rendered via mermaid.ink)
 - Full description
 - List of changed files
 - A "View Pull Request" button
@@ -175,7 +175,7 @@ This enables the `watch`, `unwatch`, and `list repos` commands in your Teams cha
 
 ### Step 6 (Optional): Auto-doc to a Feature Docs Lists tab
 
-This is the SG1-internal workflow: every PR adds a row to a Microsoft Lists tab pinned to the channel. Each row is one feature, with its own AI-written summary and Excalidraw diagram. No searching — just browse.
+This is the SG1-internal workflow: every PR adds a row to a Microsoft Lists tab pinned to the channel. Each row is one feature, with its own AI-written summary and Mermaid diagram. No searching — just browse.
 
 **You only need to do this once.** All auto-doc fields are optional; if any are missing, `notify.js` falls back to the plain notification.
 

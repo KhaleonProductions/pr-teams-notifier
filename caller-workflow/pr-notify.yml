@@ -1,15 +1,25 @@
-# Copy this file into your repo's .github/workflows/ directory
-# Then add these repository secrets on GitHub:
-#   - TEAMS_WEBHOOK_URL          (required)
-#   - CLAUDE_OAUTH_CREDS         (optional — JSON blob from ~/.claude/.credentials.json on a logged-in machine)
-#   - AZURE_TENANT_ID            (optional — needed for Lists tab auto-doc)
-#   - AZURE_CONTENT_CLIENT_ID    (optional — same)
-#   - AZURE_CONTENT_CLIENT_SECRET (optional — same)
-#   - LISTS_SITE_ID              (optional — same)
-#   - LISTS_LIST_ID              (optional — same)
+# Copy this file into your repo's .github/workflows/ directory.
+# Add these repository secrets on GitHub:
 #
-# All auto-doc secrets are optional — leave any unset to fall back to plain notification.
-# The Claude Code SDK uses ambient OAuth (no API key) — see R03.
+#   Bot Framework path (recommended — direct channel post, no webhook):
+#     - TEAMS_APP_ID                   (bot Entra appId)
+#     - TEAMS_APP_PASSWORD             (bot client secret)
+#     - TARGET_TEAM_ID                 (groupId of target team)
+#     - TARGET_CHANNEL_ID              (channel id, format `19:....@thread.tacv2`)
+#     - BOT_HOME_AZURE_TENANT_ID       (where the bot is registered)
+#
+#   Auto-doc Lists row + AI summary:
+#     - CLAUDE_OAUTH_CREDS             (JSON from ~/.claude/.credentials.json)
+#     - AZURE_TENANT_ID
+#     - AZURE_CONTENT_CLIENT_ID
+#     - AZURE_CONTENT_CLIENT_SECRET
+#     - LISTS_SITE_ID
+#     - LISTS_LIST_ID
+#
+#   Legacy fallback (only if you can't / won't use Bot Framework):
+#     - TEAMS_WEBHOOK_URL
+#
+# All auto-doc secrets are optional — leave any unset to fall back gracefully.
 # See: https://github.com/KhaleonProductions/pr-teams-notifier
 
 name: PR Teams Notification
@@ -33,3 +43,8 @@ jobs:
       AZURE_CONTENT_CLIENT_SECRET: ${{ secrets.AZURE_CONTENT_CLIENT_SECRET }}
       LISTS_SITE_ID:               ${{ secrets.LISTS_SITE_ID }}
       LISTS_LIST_ID:               ${{ secrets.LISTS_LIST_ID }}
+      TEAMS_APP_ID:                ${{ secrets.TEAMS_APP_ID }}
+      TEAMS_APP_PASSWORD:          ${{ secrets.TEAMS_APP_PASSWORD }}
+      TARGET_TEAM_ID:              ${{ secrets.TARGET_TEAM_ID }}
+      TARGET_CHANNEL_ID:           ${{ secrets.TARGET_CHANNEL_ID }}
+      BOT_HOME_AZURE_TENANT_ID:    ${{ secrets.BOT_HOME_AZURE_TENANT_ID }}

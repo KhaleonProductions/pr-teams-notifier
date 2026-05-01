@@ -61,15 +61,13 @@ if (!webhookUrl) {
   webhookUrl = config.teamsWebhookUrl;
 }
 
-if (!webhookUrl || webhookUrl === 'YOUR_TEAMS_WEBHOOK_URL_HERE') {
-  console.error('[pr-notify] Teams webhook URL not configured.');
-  console.error('[pr-notify] Set TEAMS_WEBHOOK_URL env var or create config.json.');
-  process.exit(1);
-}
+// Webhook URL is OPTIONAL when Bot Framework is configured (the new path).
+// We still set up `webhookUrl` here for the deliverToTeams() fallback. The
+// final hard-fail is at delivery time if neither path is available.
 
 // Auto-doc config — Claude Code SDK uses ambient OAuth auth (~/.claude/.credentials.json),
 // not an API key. R03-compliant. The Microsoft Graph piece needs explicit creds for the
-// SharePoint List POST.
+// SharePoint List POST. Bot Framework piece needs bot creds for direct channel-post.
 const autoDoc = {
   claudeModel:       process.env.CLAUDE_MODEL              || config.claude?.model || 'claude-haiku-4-5-20251001',
   azureTenantId:     process.env.AZURE_TENANT_ID           || config.azure?.tenantId,
@@ -77,7 +75,23 @@ const autoDoc = {
   azureClientSecret: process.env.AZURE_CONTENT_CLIENT_SECRET || config.azure?.contentClientSecret,
   listsSiteId:       process.env.LISTS_SITE_ID             || config.lists?.siteId,
   listsListId:       process.env.LISTS_LIST_ID             || config.lists?.listId,
+  // Bot Framework — the everything app's manageTeams.postChannelCard pattern.
+  // When configured, notify.js posts the card directly into the SG1 'feature docs'
+  // channel via Bot Framework, bypassing the webhook entirely. If not configured,
+  // we fall back to the legacy `teamsWebhookUrl` path (for back-compat).
+  botAppId:          process.env.TEAMS_APP_ID              || config.bot?.appId,
+  botAppPassword:    process.env.TEAMS_APP_PASSWORD        || config.bot?.appPassword,
+  botHomeTenantId:   process.env.BOT_HOME_AZURE_TENANT_ID  || config.bot?.homeTenantId   || config.azure?.tenantId,
+  botTargetTenantId: process.env.TARGET_AZURE_TENANT_ID    || config.bot?.targetTenantId || config.azure?.tenantId,
+  botTargetTeamId:   process.env.TARGET_TEAM_ID            || config.bot?.teamId         || config.lists?.groupId,
+  botTargetChannelId: process.env.TARGET_CHANNEL_ID        || config.bot?.channelId      || config.lists?.channelId,
+  botServiceUrl:     process.env.BOT_SERVICE_URL           || config.bot?.serviceUrl,
 };
+
+const botFrameworkConfigured = Boolean(
+  autoDoc.botAppId && autoDoc.botAppPassword &&
+  autoDoc.botTargetTeamId && autoDoc.botTargetChannelId && autoDoc.botTargetTenantId
+);
 
 const autoDocFullyConfigured = Boolean(
   autoDoc.azureTenantId &&
@@ -460,21 +474,114 @@ function buildCard(prData, summary, diagram) {
 }
 
 // --- 5. Send to Teams ---
+//
+// Two paths:
+//   a) Bot Framework — posts directly into a specific channel via the SG1 bot's
+//      Bot Framework credentials (TEAMS_APP_ID/PASSWORD). This is the everything
+//      app's manageTeams.postChannelCard pattern (see commit d8ac7990 — channel-
+//      level RBAC for post_channel_message via Bot Framework).
+//   b) Webhook — the legacy Teams Workflow webhook URL. Kept as a fallback so
+//      this notifier still works for environments where the bot isn't installed
+//      in the target team.
+//
+// We try (a) first when configured, fall back to (b).
 
-async function sendToTeams(webhookUrl, card) {
+async function getBotFrameworkToken(autoDoc) {
+  const r = await fetch(
+    `https://login.microsoftonline.com/${autoDoc.botHomeTenantId}/oauth2/v2.0/token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type:    'client_credentials',
+        client_id:     autoDoc.botAppId,
+        client_secret: autoDoc.botAppPassword,
+        scope:         'https://api.botframework.com/.default',
+      }),
+    },
+  );
+  if (!r.ok) throw new Error(`Bot Framework token: ${r.status} ${(await r.text()).slice(0, 300)}`);
+  const data = await r.json();
+  if (!data.access_token) throw new Error('Bot Framework token response missing access_token');
+  return data.access_token;
+}
+
+async function postChannelCardViaBotFramework(autoDoc, card, summary, prData) {
+  const token = await getBotFrameworkToken(autoDoc);
+  // Default service URL: APAC region for SG1. The everything app falls back to
+  // `https://smba.trafficmanager.net/apac/{tenantId}/` in resolveTenantServiceUrl.
+  const serviceUrl = autoDoc.botServiceUrl
+    || `https://smba.trafficmanager.net/apac/${autoDoc.botTargetTenantId}/`;
+
+  const body = {
+    isGroup: true,
+    channelData: {
+      channel: { id: autoDoc.botTargetChannelId },
+      team:    { id: autoDoc.botTargetTeamId },
+      tenant:  { id: autoDoc.botTargetTenantId },
+    },
+    activity: {
+      type: 'message',
+      // Bot Framework /v3/conversations rejects {text + attachments[card]} for
+      // channel posts ("Activity resulted into multiple skype activities"). Send
+      // ONLY the card-as-attachment; use `summary` for notification preview text.
+      summary: (summary || prData?.title || 'New Pull Request').slice(0, 240),
+      attachments: [
+        {
+          contentType: 'application/vnd.microsoft.card.adaptive',
+          content: card.attachments?.[0]?.content || card,
+        },
+      ],
+    },
+  };
+
+  const r = await fetch(`${serviceUrl}v3/conversations`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!r.ok) {
+    const errBody = await r.text();
+    if (r.status === 403 && /BotNotInConversationRoster/i.test(errBody)) {
+      throw new Error('BotNotInConversationRoster — install the bot in the target team first.');
+    }
+    throw new Error(`Bot Framework post failed (${r.status}): ${errBody.slice(0, 300)}`);
+  }
+  const data = await r.json();
+  return { conversationId: data.id, activityId: data.activityId };
+}
+
+async function sendToTeamsViaWebhook(webhookUrl, card) {
   const response = await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(card),
   });
-
   if (!response.ok) {
     const text = await response.text();
-    console.error(`[pr-notify] Teams webhook failed (${response.status}): ${text}`);
+    throw new Error(`Webhook failed (${response.status}): ${text.slice(0, 300)}`);
+  }
+}
+
+async function deliverToTeams(autoDoc, webhookUrl, card, summary, prData) {
+  // Prefer Bot Framework when configured — direct channel post, no webhook.
+  if (botFrameworkConfigured) {
+    try {
+      const result = await postChannelCardViaBotFramework(autoDoc, card, summary, prData);
+      console.log(`[pr-notify] Posted to channel via Bot Framework (conversationId=${result.conversationId}).`);
+      return;
+    } catch (e) {
+      console.error(`[pr-notify] Bot Framework post failed, falling back to webhook: ${e.message}`);
+    }
+  }
+  // Fallback / legacy: webhook.
+  if (!webhookUrl || webhookUrl === 'YOUR_TEAMS_WEBHOOK_URL_HERE') {
+    console.error('[pr-notify] No webhook fallback available. Notification not sent.');
     process.exit(1);
   }
-
-  console.log('[pr-notify] Teams notification sent successfully.');
+  await sendToTeamsViaWebhook(webhookUrl, card);
+  console.log('[pr-notify] Teams notification sent via webhook.');
 }
 
 // --- 6. Execute (auto-doc pipeline with hard fallback) ---
@@ -531,8 +638,8 @@ if (autoDocFullyConfigured) {
 }
 
 const card = buildCard(prData, summary, diagram);
-await sendToTeams(webhookUrl, card);
+await deliverToTeams(autoDoc, webhookUrl, card, summary, prData);
 
 if (autoDocFullyConfigured) {
-  console.log(`[pr-notify] Auto-doc summary: diagram=${Boolean(diagram)}, listItem=${listItemPosted}`);
+  console.log(`[pr-notify] Auto-doc summary: diagram=${Boolean(diagram)}, listItem=${listItemPosted}, deliveryMode=${botFrameworkConfigured ? 'bot-framework' : 'webhook'}`);
 }

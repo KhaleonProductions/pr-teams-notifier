@@ -4,26 +4,41 @@ on:
   workflow_call:
     secrets:
       TEAMS_WEBHOOK_URL:
-        required: true
-        description: 'Microsoft Teams Incoming Webhook URL'
+        required: false
+        description: 'Microsoft Teams Incoming Webhook URL (legacy fallback). Optional if Bot Framework is configured.'
       CLAUDE_OAUTH_CREDS:
         required: false
-        description: 'Claude Code SDK OAuth credentials JSON (writes to ~/.claude/.credentials.json). If absent, AI gen is skipped and the basic deterministic summary is used.'
+        description: 'Claude Code SDK OAuth credentials JSON (writes to ~/.claude/.credentials.json). If absent, AI gen is skipped.'
       AZURE_TENANT_ID:
         required: false
-        description: 'SG1 Azure tenant ID (e.g. e5c2a9fc-8901-41cc-8e5a-d504e42e4ca0).'
+        description: 'SG1 Azure tenant ID.'
       AZURE_CONTENT_CLIENT_ID:
         required: false
         description: 'M365 Intelligence Pro Content app — client ID.'
       AZURE_CONTENT_CLIENT_SECRET:
         required: false
-        description: 'M365 Intelligence Pro Content app — client secret (generate a fresh one for pr-teams-notifier; never reuse the everything bot''s secret).'
+        description: 'M365 Intelligence Pro Content app — client secret.'
       LISTS_SITE_ID:
         required: false
-        description: 'SharePoint site ID where the Feature Docs list lives. See setup-content-app.mjs.'
+        description: 'SharePoint site ID.'
       LISTS_LIST_ID:
         required: false
-        description: 'SharePoint list ID for the Feature Docs list. See setup-content-app.mjs.'
+        description: 'SharePoint list ID for Feature Docs.'
+      TEAMS_APP_ID:
+        required: false
+        description: 'Bot Framework app id (Entra). When set, notify.js posts directly to a channel via Bot Framework instead of the webhook.'
+      TEAMS_APP_PASSWORD:
+        required: false
+        description: 'Bot Framework app secret.'
+      TARGET_TEAM_ID:
+        required: false
+        description: 'Target team groupId for Bot Framework post.'
+      TARGET_CHANNEL_ID:
+        required: false
+        description: 'Target channel id for Bot Framework post.'
+      BOT_HOME_AZURE_TENANT_ID:
+        required: false
+        description: 'Bot home tenant id (where the bot is registered, usually = AZURE_TENANT_ID).'
 
 jobs:
   notify:
@@ -81,6 +96,11 @@ jobs:
           AZURE_CONTENT_CLIENT_SECRET: ${{ secrets.AZURE_CONTENT_CLIENT_SECRET }}
           LISTS_SITE_ID:               ${{ secrets.LISTS_SITE_ID }}
           LISTS_LIST_ID:               ${{ secrets.LISTS_LIST_ID }}
+          TEAMS_APP_ID:                ${{ secrets.TEAMS_APP_ID }}
+          TEAMS_APP_PASSWORD:          ${{ secrets.TEAMS_APP_PASSWORD }}
+          TARGET_TEAM_ID:              ${{ secrets.TARGET_TEAM_ID }}
+          TARGET_CHANNEL_ID:           ${{ secrets.TARGET_CHANNEL_ID }}
+          BOT_HOME_AZURE_TENANT_ID:    ${{ secrets.BOT_HOME_AZURE_TENANT_ID }}
           PR_URL:                      ${{ github.event.pull_request.html_url }}
           PR_TITLE:                    ${{ github.event.pull_request.title }}
           PR_BODY:                     ${{ github.event.pull_request.body }}

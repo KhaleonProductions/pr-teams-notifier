@@ -5,12 +5,27 @@
   "main": "notify.js",
   "type": "module",
   "scripts": {
-    "test": "node notify.js"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "notify": "node notify.js"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.126"
+    "@anthropic-ai/claude-agent-sdk": "^0.2.126",
+    "js-yaml": "^4.1.1",
+    "minimatch": "^10.2.5"
   },
-  "keywords": ["github", "teams", "notifications", "pull-request", "auto-doc", "claude-code-sdk"],
+  "keywords": [
+    "github",
+    "teams",
+    "notifications",
+    "pull-request",
+    "auto-doc",
+    "claude-code-sdk"
+  ],
   "author": "KhaleonProductions",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "@jest/globals": "^30.3.0",
+    "jest": "^30.3.0"
+  }
 }

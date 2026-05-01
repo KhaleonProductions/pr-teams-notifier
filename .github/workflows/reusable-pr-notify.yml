@@ -39,12 +39,21 @@ on:
       BOT_HOME_AZURE_TENANT_ID:
         required: false
         description: 'Bot home tenant id (where the bot is registered, usually = AZURE_TENANT_ID).'
+      LISTS_DISPFORM_BASE_URL:
+        required: false
+        description: 'SharePoint DispForm base URL for deep linking from Teams cards (e.g. https://contoso.sharepoint.com/sites/X/Lists/Y/DispForm.aspx).'
 
 jobs:
   notify:
     runs-on: ubuntu-latest
     if: github.event.action == 'opened'
     steps:
+      - name: Checkout caller repo (for feature surface reading)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          path: caller
+
       - name: Checkout notifier repo
         uses: actions/checkout@v4
         with:
@@ -69,25 +78,6 @@ jobs:
           printf '%s' "$CLAUDE_OAUTH_CREDS" > "$HOME/.claude/.credentials.json"
           chmod 600 "$HOME/.claude/.credentials.json"
 
-      - name: Get PR file list
-        id: files
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data: files } = await github.rest.pulls.listFiles({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number,
-              per_page: 100,
-            });
-            const fileNames = files.map(f => f.filename).join(',');
-            core.setOutput('file_list', fileNames);
-            core.setOutput('file_count', String(files.length));
-            const additions = files.reduce((sum, f) => sum + f.additions, 0);
-            const deletions = files.reduce((sum, f) => sum + f.deletions, 0);
-            core.setOutput('additions', String(additions));
-            core.setOutput('deletions', String(deletions));
-
       - name: Send Teams notification
         env:
           TEAMS_WEBHOOK_URL:           ${{ secrets.TEAMS_WEBHOOK_URL }}
@@ -101,6 +91,13 @@ jobs:
           TARGET_TEAM_ID:              ${{ secrets.TARGET_TEAM_ID }}
           TARGET_CHANNEL_ID:           ${{ secrets.TARGET_CHANNEL_ID }}
           BOT_HOME_AZURE_TENANT_ID:    ${{ secrets.BOT_HOME_AZURE_TENANT_ID }}
+          LISTS_DISPFORM_BASE_URL:     ${{ secrets.LISTS_DISPFORM_BASE_URL }}
+          REPO_DIR:                    ${{ github.workspace }}/caller
+          PR_AUTHOR:                   ${{ github.event.pull_request.user.login }}
+          PR_HEAD_SHA:                 ${{ github.event.pull_request.head.sha }}
+          GITHUB_TOKEN:                ${{ github.token }}
+          FEATURES_YAML:               ${{ github.workspace }}/notifier/features.yaml
+          SURFACE_REF:                 HEAD
           PR_URL:                      ${{ github.event.pull_request.html_url }}
           PR_TITLE:                    ${{ github.event.pull_request.title }}
           PR_BODY:                     ${{ github.event.pull_request.body }}
@@ -109,8 +106,4 @@ jobs:
           PR_REPO:                     ${{ github.repository }}
           PR_NUMBER:                   ${{ github.event.pull_request.number }}
           PR_CREATED_AT:               ${{ github.event.pull_request.created_at }}
-          PR_FILES:                    ${{ steps.files.outputs.file_list }}
-          PR_FILES_COUNT:              ${{ steps.files.outputs.file_count }}
-          PR_ADDITIONS:                ${{ steps.files.outputs.additions }}
-          PR_DELETIONS:                ${{ steps.files.outputs.deletions }}
         run: node notifier/notify.js

@@ -69,6 +69,24 @@ jobs:
         working-directory: notifier
         run: npm install --omit=dev
 
+      - name: Install Claude Code CLI globally
+        # The Claude Agent SDK shells out to a `claude` binary. Its built-in
+        # platform/libc detection has misidentified glibc Ubuntu runners as
+        # musl, resolving to a platform package that isn't installed. We
+        # bypass this by installing the official Claude Code CLI globally and
+        # exporting its absolute path via $GITHUB_ENV so notify.js can pass
+        # `pathToClaudeCodeExecutable` to the SDK explicitly.
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          CLAUDE_BIN="$(command -v claude || true)"
+          if [ -z "$CLAUDE_BIN" ]; then
+            echo "::error::Claude Code CLI not found on PATH after global install"
+            exit 1
+          fi
+          echo "CLAUDE_CODE_EXECUTABLE=$CLAUDE_BIN" >> "$GITHUB_ENV"
+          echo "Installed claude at: $CLAUDE_BIN"
+          "$CLAUDE_BIN" --version || true
+
       - name: Provision Claude SDK OAuth (optional)
         env:
           CLAUDE_OAUTH_CREDS: ${{ secrets.CLAUDE_OAUTH_CREDS }}

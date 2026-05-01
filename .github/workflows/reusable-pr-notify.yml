@@ -70,10 +70,13 @@ jobs:
         run: npm install --omit=dev
 
       - name: Provision Claude SDK OAuth (optional)
-        if: ${{ secrets.CLAUDE_OAUTH_CREDS != '' }}
         env:
           CLAUDE_OAUTH_CREDS: ${{ secrets.CLAUDE_OAUTH_CREDS }}
         run: |
+          if [ -z "$CLAUDE_OAUTH_CREDS" ]; then
+            echo "CLAUDE_OAUTH_CREDS not set; skipping Claude SDK OAuth provisioning."
+            exit 0
+          fi
           mkdir -p "$HOME/.claude"
           printf '%s' "$CLAUDE_OAUTH_CREDS" > "$HOME/.claude/.credentials.json"
           chmod 600 "$HOME/.claude/.credentials.json"

@@ -1,3 +1,5 @@
+import { retryOnce } from './retry.js';
+
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
 /**
@@ -102,18 +104,28 @@ export async function patchItem({ token, siteId, listId, itemId, fields }) {
  * list's backing document library. Content-Type must be image/png.
  */
 export async function uploadAttachment({ token, siteId, listId, itemId, filename, pngBuffer }) {
-  const url = `${GRAPH}/sites/${siteId}/lists/${listId}/items/${itemId}/driveItem:/Attachments/${filename}:/content`;
-  const res = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      Authorization:  `Bearer ${token}`,
-      'Content-Type': 'image/png',
+  const encodedFilename = encodeURIComponent(filename);
+  const url = `${GRAPH}/sites/${siteId}/lists/${listId}/items/${itemId}/driveItem:/Attachments/${encodedFilename}:/content`;
+
+  return retryOnce(
+    async () => {
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          Authorization:  `Bearer ${token}`,
+          'Content-Type': 'image/png',
+        },
+        body: pngBuffer,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`uploadAttachment failed (${res.status}): ${text.slice(0, 500)}`);
+      }
+      return res.json();
     },
-    body: pngBuffer,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`uploadAttachment failed (${res.status}): ${text.slice(0, 500)}`);
-  }
-  return res.json();
+    {
+      onRetry: (err) =>
+        console.warn(`  uploadAttachment attempt failed (${err.message}), retrying in 1 s…`),
+    },
+  );
 }

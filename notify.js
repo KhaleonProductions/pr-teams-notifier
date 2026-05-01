@@ -72,7 +72,39 @@ async function loadPRData() {
   };
 }
 
+function requireEnv(keys) {
+  const missing = keys.filter((k) => !process.env[k]);
+  if (missing.length > 0) {
+    console.error(`Missing required env vars: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+}
+
 async function main() {
+  // --- Env-var preflight (before any HTTP work) ---
+  requireEnv([
+    'LISTS_SITE_ID',
+    'LISTS_LIST_ID',
+    'AZURE_TENANT_ID',
+    'AZURE_CONTENT_CLIENT_ID',
+    'AZURE_CONTENT_CLIENT_SECRET',
+    'REPO_DIR',
+  ]);
+
+  if (env('SKIP_TEAMS') !== '1') {
+    requireEnv([
+      'BOT_HOME_AZURE_TENANT_ID',
+      'TEAMS_APP_ID',
+      'TEAMS_APP_PASSWORD',
+      'TARGET_TEAM_ID',
+      'TARGET_CHANNEL_ID',
+    ]);
+  }
+
+  if (!process.env.PR_JSON) {
+    requireEnv(['PR_REPO', 'PR_NUMBER', 'PR_TITLE', 'PR_URL', 'PR_AUTHOR', 'PR_HEAD_SHA', 'GITHUB_TOKEN']);
+  }
+
   const featuresYaml = env('FEATURES_YAML', 'features.yaml');
   if (!existsSync(featuresYaml)) {
     console.error(`features.yaml not found at ${featuresYaml}`);
@@ -106,6 +138,12 @@ async function main() {
   }
 
   const repoDir = env('REPO_DIR'); // for surface reading; in CI this is the checked-out repo
+
+  // SURFACE_REF defaults to 'HEAD' — the right default for CI where
+  // actions/checkout@v4 has already checked out the correct commit. Set
+  // SURFACE_REF explicitly if running a local backfill against a specific SHA.
+  const surfaceRef = env('SURFACE_REF', 'HEAD');
+
   const upsertResults = [];
 
   for (const feature of matched) {
@@ -113,7 +151,7 @@ async function main() {
     try {
       const surfaceFiles = readSurfaceFiles({
         repoDir,
-        ref: pr.headSha,
+        ref: surfaceRef,
         globs: feature.surfaceGlobs,
       });
       console.log(`  ${surfaceFiles.length} surface files`);
@@ -173,7 +211,7 @@ async function main() {
 
   // Post a summary card to Teams (one card per PR, listing all touched features).
   if (env('SKIP_TEAMS') !== '1') {
-    const card = buildCard({ pr, upsertResults, uncovered });
+    const card = buildCard({ pr, upsertResults, uncovered, listsDispformBase: env('LISTS_DISPFORM_BASE_URL') });
     await postChannelCardViaBotFramework({
       tenantId: env('BOT_HOME_AZURE_TENANT_ID'),
       appId: env('TEAMS_APP_ID'),

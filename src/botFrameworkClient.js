@@ -150,8 +150,7 @@ export async function postChannelCardViaBotFramework({
 
 /**
  * Build an Adaptive Card v1.4 that groups results by feature, for the auto-doc
- * pipeline. This is a NEW card shape; the old per-PR buildCard remains in
- * notify.js and is untouched until Task 4.2 migrates callers.
+ * pipeline.
  *
  * @param {{
  *   pr: {
@@ -167,18 +166,19 @@ export async function postChannelCardViaBotFramework({
  *     error?:   string,
  *   }>,
  *   uncovered: string[],   // file paths not matched to any feature
+ *   listsDispformBase?: string|null, // base URL for SharePoint DispForm links
  * }} opts
  * @returns {object} Bot Framework message envelope (type:'message', attachments:[...])
  *
  * Lists row URL
  * -------------
- * If the env var LISTS_DISPFORM_BASE_URL is set (e.g.
+ * Pass `listsDispformBase` (from env var LISTS_DISPFORM_BASE_URL, e.g.
  *   https://contoso.sharepoint.com/sites/MySite/Lists/FeatureDocs/DispForm.aspx
- * ) each upsert result that has an itemId will link to that row. Otherwise the
- * itemId is included in the card text so reviewers can locate it manually.
+ * ) so each upsert result that has an itemId will link to that row. When absent,
+ * the itemId is included in the card text so reviewers can locate it manually.
  */
-export function buildCard({ pr, upsertResults, uncovered }) {
-  const listsBase = process.env.LISTS_DISPFORM_BASE_URL || null;
+export function buildCard({ pr, upsertResults, uncovered, listsDispformBase = null }) {
+  const listsBase = listsDispformBase || null;
 
   // --- Title block ---
   const cardBody = [

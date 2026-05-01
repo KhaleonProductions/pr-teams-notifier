@@ -518,18 +518,21 @@ if (autoDocFullyConfigured) {
       // Column internal names below assume the SharePoint List was created with the
       // exact column names from README setup step 6 (no spaces). If you renamed columns
       // with spaces, SharePoint stores the internal name as "Name_x0020_Suffix".
-      await postListItem(token, autoDoc, {
+      // PRURL and Diagram are plain text columns holding URLs — modern Lists views
+      // auto-render text-that-looks-like-a-URL as a clickable link.
+      const fields = {
         Title:        prData.title,
         Repo:         prData.repo,
         Branch:       prData.branch,
         PRNumber:     parseInt(prData.number, 10) || 0,
-        PRURL:        { Url: prData.url, Description: 'View PR' },
+        PRURL:        prData.url,
         Date:         prData.createdAt,
-        Diagram:      diagram?.url ? { Url: diagram.url, Description: 'View Diagram' } : null,
         Summary:      summary,
         FilesChanged: parseInt(prData.filesCount, 10) || 0,
         Lines:        `+${prData.additions}/-${prData.deletions}`,
-      });
+      };
+      if (diagram?.url) fields.Diagram = diagram.url;
+      await postListItem(token, autoDoc, fields);
       listItemPosted = true;
       console.log('[pr-notify] Posted list item to SharePoint.');
     } catch (e) {

@@ -3,10 +3,9 @@
   "senderName": "PR Notifier",
   "repos": [],
 
-  "_comment_autodoc": "Below this line — optional. Required only if you want the Feature Docs auto-doc Lists tab. Leave any field blank to disable that step; the basic Teams notification still goes out.",
+  "_comment_autodoc": "Below this line — optional. Required only if you want the Feature Docs auto-doc Lists tab. Leave any field blank to disable that step; the basic Teams notification still goes out. The Claude Code SDK uses ambient OAuth from ~/.claude/.credentials.json — no API key needed (R03).",
 
-  "anthropic": {
-    "apiKey": "",
+  "claude": {
     "model": "claude-haiku-4-5-20251001"
   },
   "azure": {

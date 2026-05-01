@@ -67,19 +67,19 @@ if (!webhookUrl || webhookUrl === 'YOUR_TEAMS_WEBHOOK_URL_HERE') {
   process.exit(1);
 }
 
-// Auto-doc config (all optional — feature degrades gracefully if any are missing)
+// Auto-doc config — Claude Code SDK uses ambient OAuth auth (~/.claude/.credentials.json),
+// not an API key. R03-compliant. The Microsoft Graph piece needs explicit creds for the
+// SharePoint List POST.
 const autoDoc = {
-  anthropicApiKey:  process.env.ANTHROPIC_API_KEY        || config.anthropic?.apiKey,
-  anthropicModel:   process.env.ANTHROPIC_MODEL          || config.anthropic?.model    || 'claude-haiku-4-5-20251001',
-  azureTenantId:    process.env.AZURE_TENANT_ID          || config.azure?.tenantId,
-  azureClientId:    process.env.AZURE_CONTENT_CLIENT_ID  || config.azure?.contentClientId,
+  claudeModel:       process.env.CLAUDE_MODEL              || config.claude?.model || 'claude-haiku-4-5-20251001',
+  azureTenantId:     process.env.AZURE_TENANT_ID           || config.azure?.tenantId,
+  azureClientId:     process.env.AZURE_CONTENT_CLIENT_ID   || config.azure?.contentClientId,
   azureClientSecret: process.env.AZURE_CONTENT_CLIENT_SECRET || config.azure?.contentClientSecret,
-  listsSiteId:      process.env.LISTS_SITE_ID            || config.lists?.siteId,
-  listsListId:      process.env.LISTS_LIST_ID            || config.lists?.listId,
+  listsSiteId:       process.env.LISTS_SITE_ID             || config.lists?.siteId,
+  listsListId:       process.env.LISTS_LIST_ID             || config.lists?.listId,
 };
 
 const autoDocFullyConfigured = Boolean(
-  autoDoc.anthropicApiKey &&
   autoDoc.azureTenantId &&
   autoDoc.azureClientId &&
   autoDoc.azureClientSecret &&
@@ -159,9 +159,24 @@ function fallbackSummary(filesStr, additions, deletions) {
   return `Changed ${files.length} file(s) (${extList}), mostly in ${topDir[0]}. Net change: +${additions}/-${deletions} lines.`;
 }
 
-// --- 3a. AI-generated summary + Mermaid spec ---
+// --- 3a. AI-generated summary + Mermaid spec via Claude Code SDK (R03) ---
+//
+// The SDK reads OAuth credentials from ~/.claude/.credentials.json (no API key).
+// Local dev: your `claude` CLI auth works automatically.
+// CI: provision the credentials file from the CLAUDE_OAUTH_CREDS GHA secret
+//     (see .github/workflows/reusable-pr-notify.yml). If unset, AI gen is skipped
+//     and the basic notification falls back to the deterministic summary.
 
 async function aiGenerate(prData, autoDoc) {
+  // Lazy-import — if the SDK isn't installed in the runtime, bail with a clear message
+  // and let the caller fall back. We never crash the basic notification.
+  let query;
+  try {
+    ({ query } = await import('@anthropic-ai/claude-agent-sdk'));
+  } catch (e) {
+    throw new Error(`@anthropic-ai/claude-agent-sdk not installed: ${e.message}`);
+  }
+
   const fileList = prData.files.split(',').filter(Boolean).slice(0, 50).join('\n  ');
   const truncatedBody = (prData.body || '').slice(0, 2000);
 
@@ -188,53 +203,51 @@ Description: ${truncatedBody || '(none)'}
 Files changed (${prData.filesCount}, +${prData.additions}/-${prData.deletions}):
   ${fileList || '(none)'}`;
 
-  const tool = {
-    name: 'output',
-    description: 'Return the structured PR documentation.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        summary:     { type: 'string', description: '1-2 sentence plain-English summary.' },
-        mermaidSpec: { type: 'string', description: 'Mermaid flowchart spec (no fences). Must start with "flowchart ".' },
-        isNoOp:      { type: 'boolean', description: 'True only for pure formatting/docs/version-bump PRs.' },
-      },
-      required: ['summary', 'mermaidSpec', 'isNoOp'],
+  const schema = {
+    type: 'object',
+    properties: {
+      summary:     { type: 'string', description: '1-2 sentence plain-English summary.' },
+      mermaidSpec: { type: 'string', description: 'Mermaid flowchart spec (no fences). Must start with "flowchart ".' },
+      isNoOp:      { type: 'boolean', description: 'True only for pure formatting/docs/version-bump PRs.' },
     },
+    required: ['summary', 'mermaidSpec', 'isNoOp'],
   };
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type':      'application/json',
-      'x-api-key':         autoDoc.anthropicApiKey,
-      'anthropic-version': '2023-06-01',
+  // Mirrors the everything app's `queryStructured` pattern in
+  // teams_bot/src/utils/structuredQuery.ts (lean SDK defaults — R24).
+  const sdkResult = query({
+    prompt,
+    options: {
+      model:           autoDoc.claudeModel,
+      outputFormat:    { type: 'json_schema', schema },
+      tools:           [],
+      settingSources:  [],
+      allowedTools:    [],
+      permissionMode:  'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      maxTurns:        3,
     },
-    body: JSON.stringify({
-      model:       autoDoc.anthropicModel,
-      max_tokens:  2000,
-      tools:       [tool],
-      tool_choice: { type: 'tool', name: 'output' },
-      messages:    [{ role: 'user', content: prompt }],
-    }),
   });
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Anthropic API error (${response.status}): ${text.slice(0, 500)}`);
+  let structuredOutput = null;
+  for await (const msg of sdkResult) {
+    if (msg.type === 'assistant' && msg.message?.content) {
+      for (const block of msg.message.content) {
+        if (block.type === 'tool_use' && block.name === 'StructuredOutput' && block.input) {
+          structuredOutput = block.input;
+        }
+      }
+    }
   }
 
-  const data = await response.json();
-  const toolUse = (data.content || []).find(b => b.type === 'tool_use');
-  if (!toolUse?.input) {
-    throw new Error('Anthropic response missing tool_use block');
-  }
+  if (!structuredOutput) throw new Error('SDK returned no StructuredOutput tool call');
 
-  const { summary, mermaidSpec, isNoOp } = toolUse.input;
+  const { summary, mermaidSpec, isNoOp } = structuredOutput;
   if (typeof summary !== 'string' || typeof mermaidSpec !== 'string') {
-    throw new Error('Anthropic response shape invalid');
+    throw new Error('SDK response missing summary or mermaidSpec fields');
   }
   if (!/^\s*flowchart\s/i.test(mermaidSpec)) {
-    throw new Error('mermaidSpec did not start with "flowchart "');
+    throw new Error(`mermaidSpec did not start with "flowchart ": ${mermaidSpec.slice(0, 60)}`);
   }
 
   return { summary, mermaidSpec, isNoOp: Boolean(isNoOp) };

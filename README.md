@@ -10,7 +10,7 @@ When you create a PR on a watched repo, a message is posted to your Teams channe
 - Branch name (e.g. `feature/dark-mode` → `main`)
 - Date and time
 - Number of files changed and lines added/removed
-- **AI-written plain-English summary** (Haiku 4.5) — falls back to a deterministic summary if the AI is unavailable
+- **AI-written plain-English summary** (Claude Code SDK, Haiku 4.5 — uses ambient OAuth, no API key) — falls back to a deterministic summary if the SDK isn't authenticated
 - **Inline Excalidraw diagram** of the change (Mermaid → Excalidraw via Kroki)
 - Full description
 - List of changed files
@@ -227,16 +227,32 @@ You'll be prompted for the Team display name. The script prints a `config.json` 
 
 Paste the snippet into your local `config.json`. Then, **for each repo where you want auto-doc** (e.g. `staino83/business_brain`), add these secrets in GitHub → Settings → Secrets and variables → Actions:
 
-- `ANTHROPIC_API_KEY`
 - `AZURE_TENANT_ID`
 - `AZURE_CONTENT_CLIENT_ID`
 - `AZURE_CONTENT_CLIENT_SECRET`
 - `LISTS_SITE_ID`
 - `LISTS_LIST_ID`
+- `CLAUDE_OAUTH_CREDS` (optional — see 6.5 below)
 
 (Plus the existing `TEAMS_WEBHOOK_URL`.)
 
-#### 6.5 — Smoke test
+#### 6.5 — Claude Code SDK auth (R03 — no API key)
+
+`notify.js` calls Claude via `@anthropic-ai/claude-agent-sdk`'s `query()`. The SDK reads OAuth credentials from `~/.claude/.credentials.json` — there is **no Anthropic API key** anywhere in this stack.
+
+**Local dev (terminal `gh pr-notify`):** if you've ever run `claude` (the CLI) and logged in, you're already set. The credentials file exists at `~/.claude/.credentials.json` — `notify.js` will use it automatically.
+
+**GitHub Actions (web-UI PRs):** add a `CLAUDE_OAUTH_CREDS` repo secret containing the JSON contents of `~/.claude/.credentials.json` from a logged-in machine. The workflow writes it to `~/.claude/.credentials.json` on the runner before `notify.js` runs. If the secret is unset, AI gen is skipped and the basic notification falls back to the deterministic summary.
+
+To capture your credentials JSON:
+```bash
+cat ~/.claude/.credentials.json    # mac/linux
+type %USERPROFILE%\.claude\.credentials.json    # windows
+```
+
+Paste the full JSON value (one line) as the `CLAUDE_OAUTH_CREDS` secret. The SDK's auto-refresh will keep it warm across runs as long as the OAuth account isn't disabled.
+
+#### 6.6 — Smoke test
 
 Open a small PR on a watched repo. Within 60 seconds you should see:
 - A card in the Teams channel with the AI summary + diagram inline.
@@ -305,8 +321,9 @@ The auto-doc pipeline is best-effort. Each step degrades independently:
 
 | Failure | Behaviour |
 |---|---|
-| Anthropic API down or `ANTHROPIC_API_KEY` unset | Falls back to deterministic summary; no diagram; no list row. |
-| AI returned an invalid mermaid spec | Falls back to deterministic summary; no diagram; no list row. |
+| Claude Code SDK not authenticated (no `~/.claude/.credentials.json`, or `CLAUDE_OAUTH_CREDS` GHA secret unset) | Falls back to deterministic summary; no diagram. List row still posts (with the deterministic summary, no diagram URL). |
+| Claude SDK error (rate limit, network) | Same fallback as above. |
+| AI returned an invalid mermaid spec | Falls back to deterministic summary; no diagram. |
 | `@excalidraw/mermaid-to-excalidraw` not installed | Card includes summary; no diagram; no list row. |
 | Kroki / mermaid.ink unreachable from Teams' image renderer | Card includes URL; image just won't render in the card. |
 | Microsoft Graph token / List POST fails | Card still posts with diagram; no list row added. |

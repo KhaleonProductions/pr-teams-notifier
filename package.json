@@ -8,9 +8,10 @@
     "test": "node notify.js"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.126",
     "@excalidraw/mermaid-to-excalidraw": "^1.1.2"
   },
-  "keywords": ["github", "teams", "notifications", "pull-request", "auto-doc", "excalidraw"],
+  "keywords": ["github", "teams", "notifications", "pull-request", "auto-doc", "excalidraw", "claude-code-sdk"],
   "author": "KhaleonProductions",
   "license": "ISC"
 }

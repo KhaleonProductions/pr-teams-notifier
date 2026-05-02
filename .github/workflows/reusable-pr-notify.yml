@@ -45,7 +45,15 @@ on:
 
 jobs:
   notify:
-    runs-on: ubuntu-latest
+    # Self-hosted runner on a bb-prod VM. The runner inherits the VM's
+    # already-authenticated Claude Code SDK environment via the NFS-shared
+    # ~/.claude/.credentials.json (refreshed by the bb-bot fleet's auth
+    # worker). No CI-side OAuth provisioning, no CLI install, no binary
+    # path override needed — the VM handles all of it.
+    #
+    # Required runner labels: self-hosted, bbadmin
+    # See KhaleonProductions/pr-teams-notifier#5 PR body for runner setup.
+    runs-on: [self-hosted, bbadmin]
     if: github.event.action == 'opened'
     steps:
       - name: Checkout caller repo (for feature surface reading)
@@ -68,36 +76,6 @@ jobs:
       - name: Install notifier deps
         working-directory: notifier
         run: npm install --omit=dev
-
-      - name: Install Claude Code CLI globally
-        # The Claude Agent SDK shells out to a `claude` binary. Its built-in
-        # platform/libc detection has misidentified glibc Ubuntu runners as
-        # musl, resolving to a platform package that isn't installed. We
-        # bypass this by installing the official Claude Code CLI globally and
-        # exporting its absolute path via $GITHUB_ENV so notify.js can pass
-        # `pathToClaudeCodeExecutable` to the SDK explicitly.
-        run: |
-          npm install -g @anthropic-ai/claude-code
-          CLAUDE_BIN="$(command -v claude || true)"
-          if [ -z "$CLAUDE_BIN" ]; then
-            echo "::error::Claude Code CLI not found on PATH after global install"
-            exit 1
-          fi
-          echo "CLAUDE_CODE_EXECUTABLE=$CLAUDE_BIN" >> "$GITHUB_ENV"
-          echo "Installed claude at: $CLAUDE_BIN"
-          "$CLAUDE_BIN" --version || true
-
-      - name: Provision Claude SDK OAuth (optional)
-        env:
-          CLAUDE_OAUTH_CREDS: ${{ secrets.CLAUDE_OAUTH_CREDS }}
-        run: |
-          if [ -z "$CLAUDE_OAUTH_CREDS" ]; then
-            echo "CLAUDE_OAUTH_CREDS not set; skipping Claude SDK OAuth provisioning."
-            exit 0
-          fi
-          mkdir -p "$HOME/.claude"
-          printf '%s' "$CLAUDE_OAUTH_CREDS" > "$HOME/.claude/.credentials.json"
-          chmod 600 "$HOME/.claude/.credentials.json"
 
       - name: Send Teams notification
         env:

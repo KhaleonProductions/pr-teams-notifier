@@ -151,14 +151,6 @@ Produce a JSON object with:
           permissionMode:  'bypassPermissions',
           allowDangerouslySkipPermissions: true,
           maxTurns:        3,
-          // Override SDK auto-detection of the Claude Code binary path. The
-          // SDK's libc heuristic mis-identifies glibc Ubuntu runners as musl
-          // on some images, leading to "Claude Code native binary not found"
-          // when the corresponding platform package isn't installed. Setting
-          // this env in CI sidesteps that detection entirely.
-          ...(process.env.CLAUDE_CODE_EXECUTABLE
-            ? { pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE }
-            : {}),
         },
       });
       return extractStructuredOutput(sdkResult);
